@@ -89,7 +89,7 @@ param_pairs = [
 ]
 
 # define fold change to scan
-folds = np.linspace(0.5, 2.0, 20)  
+folds = np.linspace(0.5, 2.0, 10)  
 t = np.linspace(0, 80, 500)
 y0 = [1, 1]
 
@@ -166,15 +166,18 @@ sep_log_M = np.log10(separatrix[:, 1])
 sep_log = np.column_stack((sep_log_mF, sep_log_M)) # shape (N, 2)
 
 # compute the original healing area
-area = compute_healing_area(sep_log, grid_x, grid_y)
-print(area)
+original_area = compute_healing_area(sep_log, grid_x, grid_y)
+print(original_area)
 
 # ========================
 # alpha_2 vs beta_3
 # ========================
 area_matrix = np.full((len(folds), len(folds)), np.nan) 
 t_span = np.linspace(0, 100, 1000)
-eps = 1e-3
+
+def mf_m_ode_wrapper(state, p=params):
+    mF, M = state
+    return mf_m_ode_system(mF, M, p)
 
 for i, a2_fold in enumerate(folds):
     for j, b3_fold in enumerate(folds):
@@ -183,8 +186,20 @@ for i, a2_fold in enumerate(folds):
         params_new['beta3'] *= b3_fold
         fixed_points = compute_fixed_points(params_new)
 
-        fixed_points_sorted = sorted(fixed_points, key=lambda x: x[0])
-        unstable_fixed_point = fixed_points_sorted[0]
+        if not fixed_points:
+            continue
+
+        saddle_check = False
+        for fp in fixed_points:
+            J = jacobian(lambda state:mf_m_ode_wrapper(state, params_new), fp, eps=1e-6)
+            eigvals = np.linalg.eigvals(J)
+            if np.any(eigvals.real > 0) and np.any(eigvals.real < 0):
+                unstable_fixed_point = fp
+                saddle_check = True
+                break
+
+        if not saddle_check:
+            continue
 
         left = odeint(reversed_ode, [unstable_fixed_point[0]-eps, unstable_fixed_point[1]+eps], t_span, args=(params_new,))
         right = odeint(reversed_ode, [unstable_fixed_point[0]+eps, unstable_fixed_point[1]-eps], t_span, args=(params_new,))
@@ -196,60 +211,14 @@ for i, a2_fold in enumerate(folds):
         area = compute_healing_area(sep_log, grid_x, grid_y)
         area_matrix[i, j] = area
 
-
-
-# ============ test ==============
-# Plot nullclines and fixed points
-mF_vals = np.logspace(0, 7, 500)
-mF_null = [nullclines_mF(mf, params_new) for mf in mF_vals]
-M_null = [nullclines_M(mf, params_new) for mf in mF_vals]
+ratio_matrix = area_matrix / original_area
 
 plt.figure(figsize=(8, 6))
-plt.plot(mF_vals, mF_null, label='mF-nullcline (dmF/dt=0)')
-plt.plot(mF_vals, M_null, label='M-nullcline (dM/dt=0)')
-fp_arr = np.array(compute_fixed_points(params_new))
-if len(fp_arr) > 0:
-    plt.scatter(fp_arr[:, 0], fp_arr[:, 1], color='red', label='Fixed Points')
-plt.xscale('log')
-plt.yscale('log')
-plt.xlabel('mF')
-plt.ylabel('M')
-plt.legend()
-plt.title('Nullclines and Fixed Points')
-plt.grid(True)
+X, Y = np.meshgrid(folds, folds)
+figure = plt.pcolormesh(X, Y, ratio_matrix, cmap='coolwarm')
+plt.colorbar(figure, label='Healing Area Ratio (new / original)')
+plt.xlabel('alpha2 fold')
+plt.ylabel('beta3 fold')
+plt.title('Healing Basin Area Ratio Heatmap')
 plt.tight_layout()
 plt.show()
-
-# streamplot test
-x_log = np.linspace(0, 7, 100)
-y_log = np.linspace(0, 7, 100)
-X_log, Y_log = np.meshgrid(x_log, y_log)
-X = 10 ** X_log
-Y = 10 ** Y_log
-U = np.zeros_like(X)
-V = np.zeros_like(Y)
-
-for i in range(X.shape[0]):
-    for j in range(X.shape[1]):
-        u, v = mf_m_ode_system(X[i, j], Y[i, j], p = params_new)
-        U[i, j] = u
-        V[i, j] = v
-
-N = np.sqrt(U**2 + V**2)
-U /= (N + 1e-7)
-V /= (N + 1e-7)
-
-plt.figure(figsize=(8, 6))
-plt.streamplot(X_log, Y_log, U, V, color='gray', linewidth=1, density=1.2)
-plt.xlabel('log10(mF)')
-plt.ylabel('log10(M)')
-plt.title('Streamplot of mF-M Dynamic System (in log space)')
-plt.grid(True)
-plt.tight_layout()
-plt.show()
-
-fixed_points_sorted = sorted(fixed_points, key=lambda x: x[0])
-unstable_fixed_point = fixed_points_sorted[0]
-J = jacobian(mf_m_ode, unstable_fixed_point, eps=1e-6)
-eigvals_J = np.linalg.eigvals(J)
-print(eigvals_J)
