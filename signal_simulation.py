@@ -64,7 +64,7 @@ plt.tight_layout()
 plt.show()
 
 # plot trajectories
-plt.figure(figuresize=(20, 6))
+plt.figure(figsize=(20, 6))
 
 plt.subplot(1, 3, 1)
 plt.plot(np.log10(separatrix_left[:, 0]), np.log10(separatrix_left[:, 1]), 'r--', label='Separatrix Left')

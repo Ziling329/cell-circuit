@@ -71,8 +71,8 @@ def mf_m_ode_system(mF, M, p=params):
         return [0, 0]
     
 # create log-scale mesh grid
-x_log = np.linspace(0, 7, 100)
-y_log = np.linspace(0, 7, 100)
+x_log = np.linspace(-3, 8, 100)
+y_log = np.linspace(-3, 8, 100)
 X_log, Y_log = np.meshgrid(x_log, y_log)
 # convert log10 values back to linear scale
 X = 10 ** X_log
@@ -158,7 +158,7 @@ def compute_fixed_points(p=params):
 fixed_points = compute_fixed_points()
 
 # Plot nullclines and fixed points
-mF_vals = np.logspace(0, 7, 500)
+mF_vals = np.logspace(0, 8, 500)
 mF_null = [nullclines_mF(mf, params) for mf in mF_vals]
 M_null = [nullclines_M(mf, params) for mf in mF_vals]
 
@@ -203,10 +203,24 @@ def cold_fibrosis_point(p=params):
 cf_fixed_points = cold_fibrosis_point()
 print("Cold fibrosis fixed points:", cf_fixed_points)
 
+# combine all fixed points together: cold fibrosis + intersection of nullclines
+# avoid repeated fixed points
+def combine_fixed_points(fp_list1, fp_list2, tol=1e-3):   # fp_list1: fixed points from intersection, fp_list2: fixed points from cold fibrosis
+    combine = fp_list1.copy()
+    for p2 in fp_list2:
+        if all(np.linalg.norm(np.array(p2) - np.array(p1)) > tol for p1 in combine):
+            combine.append(p2)
+    return combine
 
-# ==================================
+fixed_points = compute_fixed_points(params)
+cf_points = cold_fibrosis_point(params)
+all_fixed_points = combine_fixed_points(fixed_points, cf_points)
+print(len(all_fixed_points))
+
+
+# =============================================
 # compute and plot the separatrix
-# ==================================
+# =============================================
 print("Number of fixed points found:", len(fixed_points))
 
 # sort the fixed points in ascending order of their mF values
@@ -215,11 +229,14 @@ unstable_fixed_point = fixed_points_sorted[0]
 hot_fibrosis_fixed_point = fixed_points_sorted[1]
 
 # computes the Jacobian matrix of a 2D vector field: to check the type of fixed point
+def mf_m_ode_wrapper(state, p=params):
+    mF, M = state
+    return mf_m_ode_system(mF, M, p)
+
 def jacobian(function, point, eps=1e-6):
     mF, M = point
     
     f0 = np.array(function([mF, M]))
-
     f1 = np.array(function([mF + eps, M]))
     df_dmF = (f1 - f0) / eps
 
@@ -228,9 +245,18 @@ def jacobian(function, point, eps=1e-6):
     J = np.column_stack([df_dmF, df_dM])
     return J
 
-J = jacobian(mf_m_ode_system, unstable_fixed_point)
-eigvals(J) # different sign: saddle point!
+J = jacobian(lambda state: mf_m_ode_wrapper(state, params), unstable_fixed_point)
+eigvals = np.linalg.eigvals(J) 
+print(eigvals) # different sign: saddle point!
 
+# determine the type of cold fibrosis fixed points
+for fp in cf_fixed_points:
+    J_cf = jacobian(lambda state: mf_m_ode_system(state[0], state[1], p=params), fp)
+    eigvals_cf = np.linalg.eigvals(J_cf)
+    print(eigvals_cf)  # the first cold fibrosis fixed point is saddle!
+
+cf_fixed_points_sorted = sorted(cf_fixed_points, key=lambda x: x[0])
+cf_unstable_fixed_point = cf_fixed_points_sorted[0]
 
 def mf_m_ode(state, t=0, p=params):
     mF, M = state
@@ -247,31 +273,43 @@ def mf_m_ode(state, t=0, p=params):
         return [0, 0]
 
 # compute reversed-time ODE for separatrix trajectories by backward integration
-def reversed_ode(state, t, p=params):
-    dmF, dM = mf_m_ode(state, t, p)
+def reversed_ode(state, t, p):
+    dmF, dM = mf_m_ode_wrapper(state, p)
     return [-dmF, -dM]
 
-# integrate backward in time from small perturbations of the saddle point to compute separatrix trajectories
-t_span = np.linspace(0, 100, 1000)
-eps = 1e-3
-separatrix_left = odeint(reversed_ode, [unstable_fixed_point[0] - eps, unstable_fixed_point[1] + eps], t_span)
-separatrix_right = odeint(reversed_ode, [unstable_fixed_point[0] + eps, unstable_fixed_point[1] - eps], t_span)
 
-# save saparatrix data
-separatrix = np.vstack([separatrix_left[::-1], separatrix_right])
-data = pd.DataFrame(separatrix, columns=['mF', 'M'])
+# integrate backward in time from small perturbations of the saddle point to compute separatrix trajectories
+t_span = np.linspace(0, 200, 2000)
+eps = 1e-3
+
+saddle_points = [unstable_fixed_point, cf_unstable_fixed_point]
+separatrices = []
+
+for sp in saddle_points:
+    left = odeint(reversed_ode, [sp[0] - eps, sp[1] + eps], t_span, args=(params,))
+    right = odeint(reversed_ode, [sp[0] + eps, sp[1] - eps], t_span, args=(params,))
+    separatrix = np.vstack([left[::-1], right])
+    separatrices.append(separatrix)
+
+# save data
+data = pd.DataFrame(np.vstack(separatrices), columns=['mF', 'M'])
 data.to_csv("separatrix.csv", index=False)
 
 # plot all together
 plt.figure(figsize=(8, 6))
 plt.streamplot(X_log, Y_log, U, V, color='gray', linewidth=1, density=1.2)
-plt.plot(np.log10(separatrix_left[:, 0]), np.log10(separatrix_left[:, 1]), 'r--', label='Separatrix Left')
-plt.plot(np.log10(separatrix_right[:, 0]), np.log10(separatrix_right[:, 1]), 'r--', label='Separatrix Right')
-for fp in fixed_points:
-    plt.plot(np.log10(fp[0]), np.log10(fp[1]), 'ko')
-plt.plot(0, 0, 'bo', label='Healing Point')
-plt.xlim(0, 7)
-plt.ylim(0, 7)
+
+for sep in separatrices:
+    plt.plot(np.log10(sep[:, 0]), np.log10(sep[:, 1]), 'r--')
+
+plt.plot(np.log10(fixed_points[0][0]), np.log10(fixed_points[0][1]), 'go', label='Unstable Fixed Point')
+plt.plot(np.log10(fixed_points[1][0]), np.log10(fixed_points[1][1]), 'ko', label='Hot Fibrosis')
+
+for i, fp in enumerate(cf_fixed_points):
+    plt.plot(np.log10(fp[0]), np.log10(fp[1] + 1e-3), 'bo', label='Cold Fibrosis' if i == 0 else "")
+
+plt.xlim(-3, 8)
+plt.ylim(-3, 8)
 plt.xlabel('log10(mF)')
 plt.ylabel('log10(M)')
 plt.title('Streamplot with Separatrix')
@@ -280,51 +318,47 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
+
+# ====================================
 # pack into a general function
-def generate_separatrix_plot(params_new, x_log=np.linspace(0, 7, 100), y_log=np.linspace(0, 7, 100)):
-    X_log, Y_log = np.meshgrid(x_log, y_log)
-    X = 10 ** X_log
-    Y = 10 ** Y_log
-    U = np.zeros_like(X)
-    V = np.zeros_like(Y)
-    for i in range(X.shape[0]):
-        for j in range(X.shape[1]):
-            u, v = mf_m_ode(X[i, j], Y[i, j], p=params_new)
-            U[i, j] = u
-            V[i, j] = v
-    N = np.sqrt(U**2 + V**2)
-    U /= (N + 1e-7)
-    V /= (N + 1e-7)
+# ====================================
+def generate_separatrix_plot(params_new, original_separatrix, eps = 1e-3):
 
-    fixed_points = compute_fixed_points(p=params_new)
-    if len(fixed_points) < 2:
-        print("Warning: Less than two fixed points found.")
-        return None
+    fixed_points = compute_fixed_points(params_new)
+    cf_points = cold_fibrosis_point(params_new)
+    all_fixed_points = combine_fixed_points(fixed_points, cf_points)
 
-    fixed_points_sorted = sorted(fixed_points, key=lambda x: x[0])
-    unstable_fixed_point = fixed_points_sorted[0]
+    saddle_points = []
+    for fp in all_fixed_points:
+        J = jacobian(lambda state: mf_m_ode_wrapper(state, params_new), fp, eps=1e-3)
+        eigvals = np.linalg.eigvals(J)
+        if np.any(eigvals.real > 0) and np.any(eigvals.real < 0):
+            saddle_points.append(fp)
 
-    t_span = np.linspace(0, 100, 1000)
+    t_span = np.linspace(0, 200, 2000)
     eps = 1e-3
-    left = odeint(reversed_ode, [unstable_fixed_point[0] - eps, unstable_fixed_point[1] + eps], t_span, args=(params_new,))
-    right = odeint(reversed_ode, [unstable_fixed_point[0] + eps, unstable_fixed_point[1] - eps], t_span, args=(params_new,))
-    separatrix = np.vstack([left[::-1], right])
-
+    separatrices = []
+    for sp in saddle_points:
+        left = odeint(reversed_ode, [sp[0] - eps, sp[1] + eps], t_span, args=(params_new,))
+        right = odeint(reversed_ode, [sp[0] + eps, sp[1] - eps], t_span, args=(params_new,))
+        sep = np.vstack([left[::-1], right])
+        separatrices.append(sep)
+        
     plt.figure(figsize=(8, 6))
-    plt.streamplot(X_log, Y_log, U, V, color='gray', linewidth=1, density=1.2)
-    plt.plot(np.log10(left[:, 0]), np.log10(left[:, 1]), 'r--', label='Separatrix Left')
-    plt.plot(np.log10(right[:, 0]), np.log10(right[:, 1]), 'r--', label='Separatrix Right')
+    for sep in separatrices:
+        plt.plot(np.log10(sep[:, 0]), np.log10(sep[:, 1]), 'r--')
     for fp in fixed_points:
         plt.plot(np.log10(fp[0]), np.log10(fp[1]), 'ko')
-    plt.plot(0, 0, 'bo', label='Healing Point')
+    if original_separatrix is not None:
+        plt.plot(np.log10(original_separatrix[:, 0]), np.log10(original_separatrix[:, 1]),
+                 'b--', label='Original Separatrix')
     plt.xlim(0, 7)
     plt.ylim(0, 7)
     plt.xlabel('log10(mF)')
     plt.ylabel('log10(M)')
-    plt.title(f'Separatrix at alpha2={params_new["alpha2"]:.1e}, beta3={params_new["beta3"]:.1e}')
-    plt.grid(True)
+    plt.title(f'Separatrix at alpha2={params_new["alpha2"]}, beta3={params_new["beta3"]}')
     plt.legend()
     plt.tight_layout()
     plt.show()
 
-    return separatrix
+    return separatrices

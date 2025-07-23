@@ -157,8 +157,8 @@ def compute_healing_area(separatrix, grid_x, grid_y):
 
     return healing_area
 
-x_vals = np.linspace(0, 7, 200)
-y_vals = np.linspace(0, 7, 200)
+x_vals = np.linspace(-3, 8, 200)
+y_vals = np.linspace(-3, 8, 200)
 grid_x, grid_y = np.meshgrid(x_vals, y_vals)
 
 sep_log_mF = np.log10(separatrix[:, 0])
@@ -173,40 +173,45 @@ print(original_area)
 # alpha_2 vs beta_3
 # ========================
 area_matrix = np.full((len(folds), len(folds)), np.nan) 
-t_span = np.linspace(0, 100, 1000)
-
-def mf_m_ode_wrapper(state, p=params):
-    mF, M = state
-    return mf_m_ode_system(mF, M, p)
+t_span = np.linspace(0, 200, 2000)
+eps = 1e-3
 
 for i, a2_fold in enumerate(folds):
     for j, b3_fold in enumerate(folds):
         params_new = params.copy()
         params_new['alpha2'] *= a2_fold
         params_new['beta3'] *= b3_fold
-        fixed_points = compute_fixed_points(params_new)
-
-        if not fixed_points:
-            continue
-
-        saddle_check = False
-        for fp in fixed_points:
-            J = jacobian(lambda state:mf_m_ode_wrapper(state, params_new), fp, eps=1e-6)
-            eigvals = np.linalg.eigvals(J)
-            if np.any(eigvals.real > 0) and np.any(eigvals.real < 0):
-                unstable_fixed_point = fp
-                saddle_check = True
-                break
-
-        if not saddle_check:
-            continue
-
-        left = odeint(reversed_ode, [unstable_fixed_point[0]-eps, unstable_fixed_point[1]+eps], t_span, args=(params_new,))
-        right = odeint(reversed_ode, [unstable_fixed_point[0]+eps, unstable_fixed_point[1]-eps], t_span, args=(params_new,))
         
-        sep = np.vstack([left[::-1], right])
-        sep = sep[np.all(sep > 0, axis=1)]
-        sep_log = np.log10(sep)
+        fixed_points = compute_fixed_points(params_new)
+        cf_points = cold_fibrosis_point(params_new)
+        all_fixed_points = combine_fixed_points(fixed_points, cf_points)
+
+        if not all_fixed_points:
+            continue
+
+        def find_saddle_points(fixed_points, p):
+            saddles = []
+            for fp in fixed_points:
+                J = jacobian(lambda state: mf_m_ode_wrapper(state, p), fp, eps=1e-6)
+                eigvals = np.linalg.eigvals(J)
+                if np.any(eigvals.real > 0) and np.any(eigvals.real < 0):
+                    saddles.append(fp)
+            return saddles
+
+        unstable_fixed_points = find_saddle_points(all_fixed_points, params_new)
+        if unstable_fixed_points is None:
+            continue
+
+        all_sep = []
+        for saddle in unstable_fixed_points:
+            left = odeint(reversed_ode, [saddle[0] - eps, saddle[1] + eps], t_span, args=(params_new,))
+            right = odeint(reversed_ode, [saddle[0] + eps, saddle[1] - eps], t_span, args=(params_new,))
+            sep = np.vstack([left[::-1], right])
+            sep = sep[np.all(sep > 0, axis=1)]
+            all_sep.append(sep)
+        
+        sep_all = np.vstack(all_sep)
+        sep_log = np.log10(sep_all)
 
         area = compute_healing_area(sep_log, grid_x, grid_y)
         area_matrix[i, j] = area
@@ -222,3 +227,12 @@ plt.ylabel('beta3 fold')
 plt.title('Healing Basin Area Ratio Heatmap')
 plt.tight_layout()
 plt.show()
+
+# ============ test ==============
+original_sep = pd.read_csv('separatrix.csv')[['mF', 'M']].values
+params_base = params.copy()
+params1 = params_base.copy()
+params1['alpha2'] *= 0.5
+params1['beta3'] *= 1.0
+generate_separatrix_plot(params1, original_sep)
+print(len(fixed_points))
