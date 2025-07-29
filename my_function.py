@@ -20,6 +20,7 @@ params = {
     'alpha2': 510*60*24,
     'gamma': 2 }
 
+
 # =================================================
 # phase protrait of the mF-M cell dynamic system
 # =================================================
@@ -319,11 +320,34 @@ plt.tight_layout()
 plt.show()
 
 
+
 # ====================================
 # pack into a general function
 # ====================================
 def generate_separatrix_plot(params_new, original_separatrix, eps = 1e-3):
 
+    x_log = np.linspace(-3, 8, 100)
+    y_log = np.linspace(-3, 8, 100)
+    X_log, Y_log = np.meshgrid(x_log, y_log)
+    # convert log10 values back to linear scale
+    X = 10 ** X_log
+    Y = 10 ** Y_log
+    # initialize empty arrays
+    U = np.zeros_like(X)
+    V = np.zeros_like(Y)
+
+    # compute the vector field at each point on the mF-M grid
+    for i in range(X.shape[0]):
+        for j in range(X.shape[1]):
+            u, v = mf_m_ode_system(X[i, j], Y[i, j], p)
+            U[i, j] = u
+            V[i, j] = v
+
+    # normalization
+    N = np.sqrt(U**2 + V**2)
+    U /= (N + 1e-7)
+    V /= (N + 1e-7)
+    
     fixed_points = compute_fixed_points(params_new)
     cf_points = cold_fibrosis_point(params_new)
     all_fixed_points = combine_fixed_points(fixed_points, cf_points)
@@ -338,22 +362,28 @@ def generate_separatrix_plot(params_new, original_separatrix, eps = 1e-3):
     t_span = np.linspace(0, 200, 2000)
     eps = 1e-3
     separatrices = []
+
+    plt.plot(figsize = (8, 6))
     for sp in saddle_points:
         left = odeint(reversed_ode, [sp[0] - eps, sp[1] + eps], t_span, args=(params_new,))
         right = odeint(reversed_ode, [sp[0] + eps, sp[1] - eps], t_span, args=(params_new,))
         sep = np.vstack([left[::-1], right])
         separatrices.append(sep)
-        
-    plt.figure(figsize=(8, 6))
+
     for sep in separatrices:
         plt.plot(np.log10(sep[:, 0]), np.log10(sep[:, 1]), 'r--')
-    for fp in fixed_points:
+
+    for fp in saddle_points:
         plt.plot(np.log10(fp[0]), np.log10(fp[1]), 'ko')
+
     if original_separatrix is not None:
-        plt.plot(np.log10(original_separatrix[:, 0]), np.log10(original_separatrix[:, 1]),
-                 'b--', label='Original Separatrix')
-    plt.xlim(0, 7)
-    plt.ylim(0, 7)
+        plt.plot(np.log10(original_separatrix[:, 0]), 
+                np.log10(original_separatrix[:, 1]), 
+                'b--', label='Original Separatrix')
+
+    plt.xlim(-3, 8)
+    plt.ylim(-3, 8)
+    plt.streamplot(X_log, Y_log, U, V, color='gray', linewidth=1, density=1.2)
     plt.xlabel('log10(mF)')
     plt.ylabel('log10(M)')
     plt.title(f'Separatrix at alpha2={params_new["alpha2"]}, beta3={params_new["beta3"]}')
@@ -361,4 +391,4 @@ def generate_separatrix_plot(params_new, original_separatrix, eps = 1e-3):
     plt.tight_layout()
     plt.show()
 
-    return separatrices
+    return separatrices, saddle_points
