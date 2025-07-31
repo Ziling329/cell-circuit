@@ -339,7 +339,7 @@ def generate_separatrix_plot(params_new, original_separatrix, eps = 1e-3):
     # compute the vector field at each point on the mF-M grid
     for i in range(X.shape[0]):
         for j in range(X.shape[1]):
-            u, v = mf_m_ode_system(X[i, j], Y[i, j], p)
+            u, v = mf_m_ode_system(X[i, j], Y[i, j], params_new)
             U[i, j] = u
             V[i, j] = v
 
@@ -359,12 +359,19 @@ def generate_separatrix_plot(params_new, original_separatrix, eps = 1e-3):
         if np.any(eigvals.real > 0) and np.any(eigvals.real < 0):
             saddle_points.append(fp)
 
-    t_span = np.linspace(0, 200, 2000)
-    eps = 1e-3
+    adjusted_saddle_points = []
+    for mF, M in saddle_points:
+        if M < 1:
+            M = 1
+        if mF < 1:
+            mF = 1
+        adjusted_saddle_points.append((mF, M))
+
+    t_span = np.linspace(0, 500, 2000)
     separatrices = []
 
-    plt.plot(figsize = (8, 6))
-    for sp in saddle_points:
+    plt.figure(figsize = (8, 6))
+    for sp in adjusted_saddle_points:
         left = odeint(reversed_ode, [sp[0] - eps, sp[1] + eps], t_span, args=(params_new,))
         right = odeint(reversed_ode, [sp[0] + eps, sp[1] - eps], t_span, args=(params_new,))
         sep = np.vstack([left[::-1], right])
@@ -392,3 +399,78 @@ def generate_separatrix_plot(params_new, original_separatrix, eps = 1e-3):
     plt.show()
 
     return separatrices, saddle_points
+
+def find_nullcline_fixed_points(params, plot=False, verbose=False):
+    
+    def nullclines_mF(mF):
+        try:
+            pdgf = (params['mu1'] * params['k1'] * params['K']) / (params['lambda1'] * params['K'] - params['mu1'] * params['K'] - params['lambda1'] * mF)
+            if pdgf <= 0:
+                return None
+            M = (1 / params['beta2']) * (params['alpha2'] * mF * pdgf / (params['k1'] + pdgf) + params['gamma'] * pdgf - params['beta3'] * mF)
+            return M if M >= 0 else None
+        except:
+            return None
+
+    def nullclines_M(mF):
+        try:
+            csf = params['k2'] * params['mu2'] / (params['lambda2'] - params['mu2'])
+            if csf <= 0:
+                return None
+            M = ((params['k2'] + csf) / (params['alpha1'] * csf)) * (params['beta1'] * mF - params['gamma'] * csf)
+            return M if M >= 0 else None
+        except:
+            return None
+
+    def nullcline_diff(mF):
+        m1 = nullclines_mF(mF)
+        m2 = nullclines_M(mF)
+        if m1 is not None and m2 is not None:
+            return m2 - m1
+        else:
+            return np.nan
+
+    mF_space = np.logspace(0, 7, 200)
+    diff_vals = np.array([nullcline_diff(mF) for mF in mF_space])
+    
+    guess_list = []
+    for i in range(len(diff_vals) - 1):
+        if np.isnan(diff_vals[i]) or np.isnan(diff_vals[i + 1]):
+            continue
+        if diff_vals[i] * diff_vals[i + 1] < 0:
+            guess_list.append(mF_space[i])
+
+    fixed_points = []
+    for guess in guess_list:
+        try:
+            mF_sol = fsolve(nullcline_diff, guess)[0]
+            M_sol = nullclines_mF(mF_sol)
+            if mF_sol > 0 and M_sol is not None and M_sol > 0:
+                fixed_points.append((mF_sol, M_sol))
+                if verbose:
+                    print(f"Fixed point found at mF = {mF_sol:.3e}, M = {M_sol:.3e}")
+        except:
+            continue
+
+    if plot:
+        mF_vals = np.logspace(0, 8, 500)
+        mF_null = [nullclines_mF(mf) for mf in mF_vals]
+        M_null = [nullclines_M(mf) for mf in mF_vals]
+
+        plt.figure(figsize=(8, 6))
+        plt.plot(mF_vals, mF_null, label='mF-nullcline (dmF/dt=0)')
+        plt.plot(mF_vals, M_null, label='M-nullcline (dM/dt=0)')
+        if len(fixed_points) > 0:
+            fp_arr = np.array(fixed_points)
+            plt.scatter(fp_arr[:, 0], fp_arr[:, 1], color='red', label='Fixed Points')
+        plt.xscale('log')
+        plt.yscale('log')
+        plt.xlabel('mF')
+        plt.ylabel('M')
+        plt.title('Nullclines and Fixed Points')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    return fixed_points
