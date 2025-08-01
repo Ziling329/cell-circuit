@@ -1,5 +1,5 @@
 from my_function import *
-from signal_simulation import *
+from signal_simulation import modified_mf_m_ode
 import numpy as np
 from scipy.integrate import odeint
 import matplotlib.pyplot as plt
@@ -218,8 +218,20 @@ for i, a2_fold in enumerate(folds):
 
 ratio_matrix = area_matrix / original_area
 
+for i, a2_fold in enumerate(folds):
+    for j, b3_fold in enumerate(folds):
+        if np.isnan(area_matrix[i, j]):
+            print(f"alpha2 fold: {a2_fold:.2f}, beta3 fold: {b3_fold:.2f}: area = NaN")
+
+for i, a2_fold in enumerate(folds):
+    for j, b3_fold in enumerate(folds):
+        area = area_matrix[i, j]
+        if area == 0.0 and not np.isnan(area):
+            print(f"alpha2 fold: {a2_fold:.2f}, beta3 fold: {b3_fold:.2f}： area = 0")
+
+
 plt.figure(figsize=(8, 6))
-X, Y = np.meshgrid(folds, folds)
+X, Y = np.meshgrid(folds, folds, indexing='ij') 
 figure = plt.pcolormesh(X, Y, ratio_matrix, cmap='coolwarm')
 plt.colorbar(figure, label='Healing Area Ratio (new / original)')
 plt.xlabel('alpha2 fold')
@@ -232,7 +244,11 @@ plt.show()
 original_sep = pd.read_csv('separatrix.csv')[['mF', 'M']].values
 params_base = params.copy()
 params1 = params_base.copy()
-params1['alpha2'] *= 0.5
-params1['beta3'] *= 1.0
+params1['alpha2'] *= 1.8
+params1['beta3'] *= 0.8
 generate_separatrix_plot(params1, original_sep)
-print(len(fixed_points))
+print(len(all_fixed_points))
+print(saddle_points)
+
+# nullclines test
+fixed_points = find_nullcline_fixed_points(params1, plot=True)

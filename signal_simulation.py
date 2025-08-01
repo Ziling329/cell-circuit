@@ -1,5 +1,6 @@
 from original_version import *
 import numpy as np
+import matplotlib.pyplot as plt
 
 # build heaviside function
 def heaviside_function(t, starts=[0], durations=[2], amplitude=1e6):
@@ -35,7 +36,6 @@ sol_repetitive = odeint(modified_mf_m_ode, y0, t, args=(params, 'repetitive'))
 sol_prolonged = odeint(modified_mf_m_ode, y0, t, args=(params, 'prolonged'))
 
 if __name__ == '__main__':
-    import matplotlib.pyplot as plt
 
     # plot results
     plt.figure(figsize=(15, 6))
@@ -93,8 +93,8 @@ if __name__ == '__main__':
     plt.legend()
 
     plt.subplot(1, 3, 3)
-    plt.plot(np.log10(separatrix_left[:, 0]), np.log10(separatrix_left[:, 1]), 'r--', label='Separatrix Left')
-    plt.plot(np.log10(separatrix_right[:, 0]), np.log10(separatrix_right[:, 1]), 'r--', label='Separatrix Right')
+    plt.plot(np.log10(separatrix_left[:, 0]), np.log10(separatrix_left[:, 1]), 'r--')
+    plt.plot(np.log10(separatrix_right[:, 0]), np.log10(separatrix_right[:, 1]), 'r--')
     for fp in fixed_points:
         plt.plot(np.log10(fp[0]), np.log10(fp[1]), 'ko')
     plt.xlim(0, 7)

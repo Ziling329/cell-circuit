@@ -61,7 +61,7 @@ def pdgf_steady(mF, M, p=params):
     return real_roots if real_roots else []
 
 # mF_M ode system
-def mf_m_ode_system(mF, M, p=params):
+def mf_m_ode_system(mF, M, p = params):
     csf = csf_steady(mF, M, p)
     pdgf = pdgf_steady(mF, M, p)
     if csf and pdgf:
@@ -398,10 +398,12 @@ def generate_separatrix_plot(params_new, original_separatrix, eps = 1e-3):
     plt.tight_layout()
     plt.show()
 
-    return separatrices, saddle_points
+    return separatrices, saddle_points, adjusted_saddle_points
 
-def find_nullcline_fixed_points(params, plot=False, verbose=False):
-    
+
+# nullcline test
+def find_nullcline_fixed_points(params, plot=False):
+
     def nullclines_mF(mF):
         try:
             pdgf = (params['mu1'] * params['k1'] * params['K']) / (params['lambda1'] * params['K'] - params['mu1'] * params['K'] - params['lambda1'] * mF)
@@ -447,8 +449,6 @@ def find_nullcline_fixed_points(params, plot=False, verbose=False):
             M_sol = nullclines_mF(mF_sol)
             if mF_sol > 0 and M_sol is not None and M_sol > 0:
                 fixed_points.append((mF_sol, M_sol))
-                if verbose:
-                    print(f"Fixed point found at mF = {mF_sol:.3e}, M = {M_sol:.3e}")
         except:
             continue
 

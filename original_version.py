@@ -60,15 +60,15 @@ def pdgf_steady(mF, M, p=params):
     return real_roots if real_roots else []
 
 # mF_M ode system
-def mf_m_ode(mF, M, p=params):
+def mf_m_ode_system(mF, M, p=params):
     csf = csf_steady(mF, M, p)
     pdgf = pdgf_steady(mF, M, p)
     if csf and pdgf:
         dmF = mF * ((p['lambda1'] * pdgf[0] / (p['k1'] + pdgf[0])) * (1 - mF / p['K']) - p['mu1'])
         dM = M * (p['lambda2'] * csf[0] / (p['k2'] + csf[0]) - p['mu2'])
-        return dmF, dM
+        return [dmF, dM]
     else:
-        return 0, 0
+        return [0, 0]
     
 # create log-scale mesh grid
 x_log = np.linspace(0, 7, 100)
@@ -84,7 +84,7 @@ V = np.zeros_like(Y)
 # compute the vector field at each point on the mF-M grid
 for i in range(X.shape[0]):
     for j in range(X.shape[1]):
-        u, v = mf_m_ode(X[i, j], Y[i, j])
+        u, v = mf_m_ode_system(X[i, j], Y[i, j], p = params)
         U[i, j] = u
         V[i, j] = v
 
@@ -124,6 +124,7 @@ def nullclines_M(mF, p=params):
     return M if M >=0 else None
 
 def compute_fixed_points(p=params):
+
     def nullclines_diff(mF, p):
         m1 = nullclines_mF(mF, p)
         m2 = nullclines_M(mF, p)
@@ -134,7 +135,8 @@ def compute_fixed_points(p=params):
 
     mF_space = np.logspace(0, 7, 50)
     diff_vals = np.array([nullclines_diff(mF, p) for mF in mF_space])
-# guesses where sign changes
+
+    # guesses where sign changes
     guess_list = []
     for i in range(len(diff_vals) - 1):
         if diff_vals[i] * diff_vals[i + 1] < 0:
@@ -152,6 +154,8 @@ def compute_fixed_points(p=params):
             continue
 
     return fixed_points
+
+fixed_points = compute_fixed_points()
 
 # Plot nullclines and fixed points
 mF_vals = np.logspace(0, 7, 500)
@@ -213,6 +217,7 @@ hot_fibrosis_fixed_point = fixed_points_sorted[1]
 # computes the Jacobian matrix of a 2D vector field: to check the type of fixed point
 def jacobian(function, point, eps=1e-6):
     mF, M = point
+    
     f0 = np.array(function([mF, M]))
 
     f1 = np.array(function([mF + eps, M]))
@@ -223,7 +228,7 @@ def jacobian(function, point, eps=1e-6):
     J = np.column_stack([df_dmF, df_dM])
     return J
 
-J = jacobian(mf_m_ode, unstable_fixed_point)
+J = jacobian(mf_m_ode_system, unstable_fixed_point)
 eigvals(J) # different sign: saddle point!
 
 
@@ -251,11 +256,6 @@ t_span = np.linspace(0, 100, 1000)
 eps = 1e-3
 separatrix_left = odeint(reversed_ode, [unstable_fixed_point[0] - eps, unstable_fixed_point[1] + eps], t_span)
 separatrix_right = odeint(reversed_ode, [unstable_fixed_point[0] + eps, unstable_fixed_point[1] - eps], t_span)
-
-# save saparatrix data
-separatrix = np.vstack([separatrix_left[::-1], separatrix_right])
-data = pd.DataFrame(separatrix, columns=['mF', 'M'])
-data.to_csv("separatrix.csv", index=False)
 
 # plot all together
 plt.figure(figsize=(8, 6))
